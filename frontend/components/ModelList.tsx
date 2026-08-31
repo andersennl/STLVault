@@ -97,6 +97,54 @@ const VisuallyHiddenInput = styled("input")({
   width: 1,
 });
 
+interface GroupPreviewProps {
+  groupName: string;
+  models: STLModel[];
+  onSelectModel: (model: STLModel) => void;
+}
+
+const GroupPreview: React.FC<GroupPreviewProps> = ({
+  groupName,
+  models,
+  onSelectModel,
+}) => {
+  const previewModels = models.slice(0, 4);
+
+  return (
+    <div
+      className="grid grid-cols-2 gap-1 h-40 mb-3 overflow-hidden rounded-lg bg-vault-900/60"
+      aria-label={`Preview of print group ${groupName}`}
+    >
+      {previewModels.map((model, index) => (
+        <button
+          key={model.id}
+          type="button"
+          className="relative min-h-0 overflow-hidden bg-vault-800"
+          onClick={() => onSelectModel(model)}
+          aria-label={`Open ${model.name}`}
+        >
+          {model.thumbnail ? (
+            <img
+              src={model.thumbnail}
+              alt={`Preview of ${model.name}`}
+              className="h-full w-full object-cover transition-transform hover:scale-105"
+            />
+          ) : (
+            <span className="flex h-full items-center justify-center text-slate-500">
+              <FileBox aria-hidden="true" />
+            </span>
+          )}
+          {index === 3 && models.length > 4 && (
+            <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm font-semibold text-white">
+              +{models.length - 4} more
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+};
+
 const ModelList: React.FC<ModelListProps> = ({
   models,
   modelGroups,
@@ -645,6 +693,12 @@ const ModelList: React.FC<ModelListProps> = ({
                           </IconButton>
                         </Tooltip>
                       </Stack>
+
+                      <GroupPreview
+                        groupName={group.name}
+                        models={group.models}
+                        onSelectModel={onSelectModel}
+                      />
 
                       <Stack spacing={1}>
                         {group.models.map((model) => (
