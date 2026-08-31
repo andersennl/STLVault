@@ -46,6 +46,11 @@ import InputAdornment from "@mui/material/InputAdornment";
 import FormControl from "@mui/material/FormControl";
 import Select, { SelectChangeEvent } from "@mui/material/Select";
 import InputLabel from "@mui/material/InputLabel";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
 
 interface ModelListProps {
   models: STLModel[];
@@ -127,6 +132,8 @@ const ModelList: React.FC<ModelListProps> = ({
   );
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [groupToDissolve, setGroupToDissolve] =
+    useState<ModelGroup | null>(null);
 
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [slicerAnchorEl, setSlicerAnchorEl] =
@@ -832,10 +839,10 @@ const ModelList: React.FC<ModelListProps> = ({
                             }}
                           />
                         </Tooltip>
-                        <Tooltip title="Dissolve group (keep models)">
+                        <Tooltip title="Ungroup (keep models)">
                           <IconButton
-                            aria-label={`Dissolve print group ${group.name}`}
-                            onClick={() => onDeleteModelGroup(group.id)}
+                            aria-label={`Ungroup print group ${group.name}`}
+                            onClick={() => setGroupToDissolve(group)}
                           >
                             <Unlink />
                           </IconButton>
@@ -880,6 +887,37 @@ const ModelList: React.FC<ModelListProps> = ({
             {/* Render Models */}
             {ungroupedModels.map((model) => renderModelCard(model))}
           </div>
+
+          <Dialog
+            open={Boolean(groupToDissolve)}
+            onClose={() => setGroupToDissolve(null)}
+            aria-labelledby="ungroup-dialog-title"
+          >
+            <DialogTitle id="ungroup-dialog-title">
+              Ungroup {groupToDissolve?.name}?
+            </DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                The models will stay in your library, but they will no longer
+                be grouped together.
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setGroupToDissolve(null)}>Cancel</Button>
+              <Button
+                color="warning"
+                variant="contained"
+                onClick={() => {
+                  if (groupToDissolve) {
+                    onDeleteModelGroup(groupToDissolve.id);
+                  }
+                  setGroupToDissolve(null);
+                }}
+              >
+                Ungroup
+              </Button>
+            </DialogActions>
+          </Dialog>
         </div>
       )}
     </div>
