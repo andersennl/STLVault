@@ -5,7 +5,13 @@ import DetailPanel from "./components/DetailPanel";
 import Settings from "./components/Settings";
 import Navbar from "./components/Navbar";
 import ManualModal from "./components/ManualModal";
-import { STLModel, Folder, StorageStats, STLModelCollection } from "./types";
+import {
+  STLModel,
+  Folder,
+  ModelGroup,
+  StorageStats,
+  STLModelCollection,
+} from "./types";
 import { generateThumbnail } from "./services/thumbnailGenerator";
 import { api } from "./services/api";
 import {
@@ -17,6 +23,7 @@ import {
   Download,
   FileUp,
   Globe,
+  Boxes,
 } from "lucide-react";
 import JSZip from "jszip";
 import { useMediaQuery } from "./hooks/useMediaQuery";
@@ -37,6 +44,7 @@ const App = () => {
   });
   const [folders, setFolders] = useState<Folder[]>([]);
   const [models, setModels] = useState<STLModel[]>([]);
+  const [modelGroups, setModelGroups] = useState<ModelGroup[]>([]);
   const [storageStats, setStorageStats] = useState<StorageStats>({
     used: 0,
     total: 0,
@@ -57,6 +65,10 @@ const App = () => {
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showTagModal, setShowTagModal] = useState(false);
   const [bulkTags, setBulkTags] = useState("");
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupMode, setGroupMode] = useState<"new" | "existing">("new");
+  const [groupName, setGroupName] = useState("");
+  const [targetGroupId, setTargetGroupId] = useState("");
 
   // Upload Modal State
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -92,11 +104,16 @@ const App = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [fetchedFolders, fetchedModels, fetchedStats] = await Promise.all(
-          [api.getFolders(), api.getModels("all"), api.getStorageStats()],
-        );
+        const [fetchedFolders, fetchedModels, fetchedGroups, fetchedStats] =
+          await Promise.all([
+            api.getFolders(),
+            api.getModels("all"),
+            api.getModelGroups(),
+            api.getStorageStats(),
+          ]);
         setFolders(fetchedFolders);
         setModels(fetchedModels);
+        setModelGroups(fetchedGroups);
         setStorageStats(fetchedStats);
       } catch (error) {
         console.error("Failed to fetch initial data:", error);
@@ -484,6 +501,14 @@ const App = () => {
     setSelectedIds(newSet);
   };
 
+  const handleGroupSelection = (ids: string[], selected: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      ids.forEach((id) => (selected ? next.add(id) : next.delete(id)));
+      return next;
+    });
+  };
+
   const handleSelectAll = (filtered) => {
     if (selectedIds.size === filtered.length) {
       setSelectedIds(new Set());
@@ -544,6 +569,67 @@ const App = () => {
       setSelectedIds(new Set());
     } catch (err) {
       console.error("Bulk tag failed", err);
+    }
+  };
+
+  const refreshModelsAndGroups = async () => {
+    const [fetchedModels, fetchedGroups] = await Promise.all([
+      api.getModels("all"),
+      api.getModelGroups(),
+    ]);
+    setModels(fetchedModels);
+    setModelGroups(fetchedGroups);
+  };
+
+  const handleOpenGroupModal = () => {
+    setGroupMode("new");
+    setGroupName("");
+    setTargetGroupId(modelGroups[0]?.id || "");
+    setShowGroupModal(true);
+  };
+
+  const handleGroupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const modelIds = Array.from(selectedIds);
+    if (modelIds.length === 0) return;
+
+    try {
+      if (groupMode === "new") {
+        await api.createModelGroup(groupName, modelIds);
+      } else {
+        await api.addModelsToGroup(targetGroupId, modelIds);
+      }
+      await refreshModelsAndGroups();
+      setSelectedIds(new Set());
+      setShowGroupModal(false);
+    } catch (error) {
+      console.error("Failed to group models", error);
+      alert(
+        "Grouping failed. A model can only belong to one print group at a time.",
+      );
+    }
+  };
+
+  const handleDeleteModelGroup = async (groupId: string) => {
+    try {
+      await api.deleteModelGroup(groupId);
+      await refreshModelsAndGroups();
+    } catch (error) {
+      console.error("Failed to dissolve model group", error);
+      alert("Failed to dissolve print group");
+    }
+  };
+
+  const handleRemoveModelFromGroup = async (
+    groupId: string,
+    modelId: string,
+  ) => {
+    try {
+      await api.removeModelFromGroup(groupId, modelId);
+      await refreshModelsAndGroups();
+    } catch (error) {
+      console.error("Failed to remove model from group", error);
+      alert("Failed to remove model from print group");
     }
   };
 
@@ -693,6 +779,7 @@ const App = () => {
               ) : (
                 <ModelList
                   models={filteredModels}
+                  modelGroups={modelGroups}
                   folders={filteredFolders}
                   currentFolderName={currentFolderName}
                   onBackNavigation={() => {
@@ -709,6 +796,7 @@ const App = () => {
                   // Selection Props
                   selectedIds={selectedIds}
                   onToggleSelection={handleToggleSelection}
+                  onToggleGroupSelection={handleGroupSelection}
                   onSelectAll={(filtered) => handleSelectAll(filtered)}
                   onClearSelection={() => setSelectedIds(new Set())}
                   onNavigateFolder={(id) => setCurrentFolderId(id)}
@@ -716,6 +804,8 @@ const App = () => {
                   onUploadToFolder={(folderId, files) =>
                     handleUpload(files, folderId)
                   }
+                  onDeleteModelGroup={handleDeleteModelGroup}
+                  onRemoveModelFromGroup={handleRemoveModelFromGroup}
                 />
               )}
 
@@ -778,6 +868,17 @@ const App = () => {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleOpenGroupModal}
+                      className="p-2 rounded-full hover:bg-vault-700 text-slate-300 hover:text-cyan-400 transition-colors flex items-center gap-2"
+                      title="Group Selected"
+                    >
+                      <Boxes className="w-4 h-4" />
+                      <span className="text-sm font-medium hidden sm:inline">
+                        Group
+                      </span>
+                    </button>
+
                     <button
                       onClick={() => setShowMoveModal(true)}
                       className="p-2 rounded-full hover:bg-vault-700 text-slate-300 hover:text-blue-400 transition-colors flex items-center gap-2"
@@ -1207,6 +1308,130 @@ const App = () => {
                         Delete
                       </button>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {showGroupModal && (
+                <div
+                  className={`fixed left-0 top-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center p-4 ${
+                    visualViewport.keyboardOpen ? "items-start" : "items-center"
+                  }`}
+                  style={{
+                    width: "100%",
+                    height:
+                      visualViewport.height ||
+                      (typeof window !== "undefined" ? window.innerHeight : 0),
+                    transform: `translate(${visualViewport.offsetLeft}px, ${visualViewport.offsetTop}px)`,
+                  }}
+                >
+                  <div className="bg-vault-800 border border-vault-600 rounded-xl p-6 w-96 shadow-2xl">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-white flex items-center gap-2">
+                        <Boxes className="w-4 h-4" /> Create Print Group
+                      </h3>
+                      <button
+                        onClick={() => setShowGroupModal(false)}
+                        className="text-slate-400 hover:text-white"
+                        aria-label="Close print group dialog"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="text-sm text-slate-400 mb-4">
+                      Keep {selectedIds.size} selected models together without
+                      merging their files.
+                    </p>
+                    <form onSubmit={handleGroupSubmit}>
+                      <div className="flex gap-2 mb-4">
+                        <button
+                          type="button"
+                          className={`flex-1 px-3 py-2 rounded ${
+                            groupMode === "new"
+                              ? "bg-blue-600 text-white"
+                              : "bg-vault-700 text-slate-300"
+                          }`}
+                          onClick={() => setGroupMode("new")}
+                        >
+                          New group
+                        </button>
+                        <button
+                          type="button"
+                          disabled={modelGroups.length === 0}
+                          className={`flex-1 px-3 py-2 rounded disabled:opacity-40 ${
+                            groupMode === "existing"
+                              ? "bg-blue-600 text-white"
+                              : "bg-vault-700 text-slate-300"
+                          }`}
+                          onClick={() => setGroupMode("existing")}
+                        >
+                          Existing group
+                        </button>
+                      </div>
+
+                      {groupMode === "new" ? (
+                        <div className="mb-4">
+                          <label
+                            htmlFor="print-group-name"
+                            className="block text-sm text-slate-400 mb-1"
+                          >
+                            Group name
+                          </label>
+                          <input
+                            id="print-group-name"
+                            autoFocus
+                            required
+                            value={groupName}
+                            onChange={(e) => setGroupName(e.target.value)}
+                            placeholder="e.g. Desk organizer"
+                            className="w-full bg-vault-900 border border-vault-700 rounded-md px-3 py-2 text-white focus:border-blue-500 outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div className="mb-4">
+                          <label
+                            htmlFor="existing-print-group"
+                            className="block text-sm text-slate-400 mb-1"
+                          >
+                            Print group
+                          </label>
+                          <select
+                            id="existing-print-group"
+                            required
+                            value={targetGroupId}
+                            onChange={(e) => setTargetGroupId(e.target.value)}
+                            className="w-full bg-vault-900 border border-vault-700 rounded-md px-3 py-2 text-white focus:border-blue-500 outline-none"
+                          >
+                            {modelGroups.map((group) => (
+                              <option key={group.id} value={group.id}>
+                                {group.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowGroupModal(false)}
+                          className="px-3 py-2 text-sm text-slate-300 hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={
+                            groupMode === "new"
+                              ? !groupName.trim()
+                              : !targetGroupId
+                          }
+                          className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+                        >
+                          Save group
+                        </button>
+                      </div>
+                    </form>
                   </div>
                 </div>
               )}

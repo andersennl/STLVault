@@ -14,8 +14,10 @@ import {
   XCircle,
   ChevronLeft,
   BookOpen,
+  Boxes,
+  Unlink,
 } from "lucide-react";
-import { STLModel, Folder } from "../types";
+import { STLModel, Folder, ModelGroup } from "../types";
 import {
   api,
   getEnabledLaunchSlicers,
@@ -49,6 +51,7 @@ import InputLabel from "@mui/material/InputLabel";
 
 interface ModelListProps {
   models: STLModel[];
+  modelGroups: ModelGroup[];
   folders: Folder[];
   currentFolderName: string;
   onBackNavigation: () => void;
@@ -62,6 +65,7 @@ interface ModelListProps {
   // Selection Props
   selectedIds: Set<string>;
   onToggleSelection: (id: string) => void;
+  onToggleGroupSelection: (ids: string[], selected: boolean) => void;
   onSelectAll: (filtered) => void;
   onClearSelection: () => void;
 
@@ -69,6 +73,8 @@ interface ModelListProps {
   onNavigateFolder: (id: string) => void;
   onMoveToFolder: (folderId: string, modelIds: string[]) => void;
   onUploadToFolder: (folderId: string, files: FileList) => void;
+  onDeleteModelGroup: (groupId: string) => void;
+  onRemoveModelFromGroup: (groupId: string, modelId: string) => void;
 }
 
 type SortOption =
@@ -93,6 +99,7 @@ const VisuallyHiddenInput = styled("input")({
 
 const ModelList: React.FC<ModelListProps> = ({
   models,
+  modelGroups,
   folders,
   currentFolderName,
   onBackNavigation,
@@ -104,11 +111,14 @@ const ModelList: React.FC<ModelListProps> = ({
   selectedModelId,
   selectedIds,
   onToggleSelection,
+  onToggleGroupSelection,
   onSelectAll,
   onClearSelection,
   onNavigateFolder,
   onMoveToFolder,
   onUploadToFolder,
+  onDeleteModelGroup,
+  onRemoveModelFromGroup,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +165,8 @@ const ModelList: React.FC<ModelListProps> = ({
       result = result.filter(
         (m) =>
           m.name.toLowerCase().includes(query) ||
-          m.tags.some((t) => t.toLowerCase().includes(query)),
+          m.tags.some((t) => t.toLowerCase().includes(query)) ||
+          (m.groupName || "").toLowerCase().includes(query),
       );
     }
 
@@ -192,6 +203,22 @@ const ModelList: React.FC<ModelListProps> = ({
     result.sort((a, b) => a.name.localeCompare(b.name));
     return result;
   }, [folders, searchQuery]);
+
+  const visibleGroups = useMemo(
+    () =>
+      modelGroups
+        .map((group) => ({
+          ...group,
+          models: processedModels.filter((model) => model.groupId === group.id),
+        }))
+        .filter((group) => group.models.length > 0),
+    [modelGroups, processedModels],
+  );
+
+  const ungroupedModels = useMemo(
+    () => processedModels.filter((model) => !model.groupId),
+    [processedModels],
+  );
 
   const openSlicerLauncher = (
     event: React.MouseEvent<HTMLElement>,
@@ -391,7 +418,10 @@ const ModelList: React.FC<ModelListProps> = ({
                         }
                         onClick={() => {
                           setSearchQuery("");
-                          document.getElementById("search-input").value = "";
+                          const input = document.getElementById(
+                            "search-input",
+                          ) as HTMLInputElement | null;
+                          if (input) input.value = "";
                         }}
                       >
                         <XCircle />
@@ -558,6 +588,124 @@ const ModelList: React.FC<ModelListProps> = ({
             ))}
           </div>
 
+          {/* Print Groups */}
+          {visibleGroups.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pb-5">
+              {visibleGroups.map((group) => {
+                const allSelected = group.models.every((model) =>
+                  selectedIds.has(model.id),
+                );
+                return (
+                  <Card key={group.id} variant="outlined">
+                    <CardContent>
+                      <Stack
+                        direction="row"
+                        spacing={2}
+                        sx={{ alignItems: "center", mb: 2 }}
+                      >
+                        <Avatar sx={{ bgcolor: "primary.dark" }}>
+                          <Boxes />
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <Typography variant="h6" noWrap>
+                            {group.name}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ color: "text.secondary" }}
+                          >
+                            Print group • {group.models.length}{" "}
+                            {group.models.length === 1 ? "part" : "parts"}
+                          </Typography>
+                        </div>
+                        <Tooltip
+                          title={allSelected ? "Unselect group" : "Select group"}
+                        >
+                          <Checkbox
+                            checked={allSelected}
+                            onChange={() =>
+                              onToggleGroupSelection(
+                                group.models.map((model) => model.id),
+                                !allSelected,
+                              )
+                            }
+                            slotProps={{
+                              input: {
+                                "aria-label": `Select print group ${group.name}`,
+                              },
+                            }}
+                          />
+                        </Tooltip>
+                        <Tooltip title="Dissolve group (keep models)">
+                          <IconButton
+                            aria-label={`Dissolve print group ${group.name}`}
+                            onClick={() => onDeleteModelGroup(group.id)}
+                          >
+                            <Unlink />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+
+                      <Stack spacing={1}>
+                        {group.models.map((model) => (
+                          <div
+                            key={model.id}
+                            className="flex items-center gap-2 rounded-lg bg-vault-900/60 px-2 py-1"
+                          >
+                            <Checkbox
+                              checked={selectedIds.has(model.id)}
+                              onChange={() => onToggleSelection(model.id)}
+                              slotProps={{
+                                input: {
+                                  "aria-label": `Select ${model.name}`,
+                                },
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left py-2"
+                              onClick={() => onSelectModel(model)}
+                            >
+                              <Typography variant="body2" noWrap>
+                                {model.name}
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                sx={{ color: "text.secondary" }}
+                              >
+                                {(model.size / (1024 * 1024)).toFixed(2)} MB
+                              </Typography>
+                            </button>
+                            <Tooltip title="Download">
+                              <IconButton
+                                aria-label={`Download ${model.name}`}
+                                href={api.getDownloadUrl(model)}
+                                size="small"
+                              >
+                                <DownloadIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Remove from group">
+                              <IconButton
+                                aria-label={`Remove ${model.name} from group`}
+                                onClick={() =>
+                                  onRemoveModelFromGroup(group.id, model.id)
+                                }
+                                size="small"
+                              >
+                                <XCircle />
+                              </IconButton>
+                            </Tooltip>
+                          </div>
+                        ))}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
           {/* Files */}
           <div
             className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 pb-24"
@@ -582,7 +730,7 @@ const ModelList: React.FC<ModelListProps> = ({
             )}
 
             {/* Render Models */}
-            {processedModels.map((model) => {
+            {ungroupedModels.map((model) => {
               const isSelected = selectedIds.has(model.id);
               const isMenuOpen = activeMenuModelId === model.id;
 
@@ -689,10 +837,7 @@ const ModelList: React.FC<ModelListProps> = ({
                           Boolean(slicerAnchorEl) &&
                           slicerModel?.id === model.id
                         }
-                        onClose={(e) => {
-                          e.stopPropagation();
-                          closeSlicerMenu();
-                        }}
+                        onClose={closeSlicerMenu}
                         anchorOrigin={{
                           vertical: "top",
                           horizontal: "left",
@@ -747,10 +892,7 @@ const ModelList: React.FC<ModelListProps> = ({
                           id={`fade-menu-${model.id}`}
                           anchorEl={anchorEl}
                           open={isMenuOpen}
-                          onClose={(e) => {
-                            e.stopPropagation();
-                            setActiveMenuModelId(null);
-                          }}
+                          onClose={() => setActiveMenuModelId(null)}
                           anchorOrigin={{
                             vertical: "top",
                             horizontal: "right",
