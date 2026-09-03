@@ -509,13 +509,17 @@ const App = () => {
     });
   };
 
-  const handleSelectAll = (filtered) => {
-    if (selectedIds.size === filtered.length) {
-      setSelectedIds(new Set());
-    } else {
-      const allIds = filtered.map((m) => m.id);
-      setSelectedIds(new Set(allIds));
-    }
+  const handleSelectAll = (filtered: STLModel[]) => {
+    const filteredIds = filtered.map((model) => model.id);
+    const allSelected = filteredIds.every((id) => selectedIds.has(id));
+
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      filteredIds.forEach((id) =>
+        allSelected ? next.delete(id) : next.add(id),
+      );
+      return next;
+    });
   };
 
   const handleBulkMoveSubmit = async (targetFolderId: string) => {

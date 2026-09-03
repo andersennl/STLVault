@@ -51,6 +51,8 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 interface ModelListProps {
   models: STLModel[];
@@ -69,7 +71,7 @@ interface ModelListProps {
   selectedIds: Set<string>;
   onToggleSelection: (id: string) => void;
   onToggleGroupSelection: (ids: string[], selected: boolean) => void;
-  onSelectAll: (filtered) => void;
+  onSelectAll: (filtered: STLModel[]) => void;
   onClearSelection: () => void;
 
   // Folder Interaction Props
@@ -87,6 +89,8 @@ type SortOption =
   | "name-desc"
   | "size-desc"
   | "size-asc";
+
+type ModelView = "all" | "groups" | "ungrouped";
 
 const VisuallyHiddenInput = styled("input")({
   clip: "rect(0 0 0 0)",
@@ -127,6 +131,7 @@ const ModelList: React.FC<ModelListProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("date-desc");
+  const [modelView, setModelView] = useState<ModelView>("all");
   const [activeMenuModelId, setActiveMenuModelId] = useState<string | null>(
     null,
   );
@@ -224,6 +229,20 @@ const ModelList: React.FC<ModelListProps> = ({
     () => processedModels.filter((model) => !model.groupId),
     [processedModels],
   );
+
+  const displayedModels = useMemo(() => {
+    if (modelView === "groups") {
+      return visibleGroups.flatMap((group) => group.models);
+    }
+    if (modelView === "ungrouped") {
+      return ungroupedModels;
+    }
+    return processedModels;
+  }, [modelView, processedModels, ungroupedModels, visibleGroups]);
+
+  const allDisplayedSelected =
+    displayedModels.length > 0 &&
+    displayedModels.every((model) => selectedIds.has(model.id));
 
   const openSlicerLauncher = (
     event: React.MouseEvent<HTMLElement>,
@@ -548,9 +567,9 @@ const ModelList: React.FC<ModelListProps> = ({
               <Typography variant="body1" sx={{ color: "text.secondary" }}>
                 {processedFolders.length}{" "}
                 {processedFolders.length === 1 ? "folder • " : "folders • "}
-                {processedModels.length}{" "}
-                {processedModels.length === 1 ? "model" : "models"}
-                {models.length !== processedModels.length &&
+                {displayedModels.length}{" "}
+                {displayedModels.length === 1 ? "model" : "models"}
+                {models.length !== displayedModels.length &&
                   ` ( filtered from: ${models.length} )`}
               </Typography>
             </Stack>
@@ -561,13 +580,9 @@ const ModelList: React.FC<ModelListProps> = ({
               <Button
                 variant="outlined"
                 startIcon={<CheckSquare />}
-                onClick={() => onSelectAll(processedModels)}
+                onClick={() => onSelectAll(displayedModels)}
               >
-                {`${
-                  models.length === selectedIds.size
-                    ? "Unselect All"
-                    : "Select All"
-                } `}
+                {allDisplayedSelected ? "Unselect All" : "Select All"}
               </Button>
               <Button
                 variant="contained"
@@ -656,6 +671,29 @@ const ModelList: React.FC<ModelListProps> = ({
               </Select>
             </FormControl>
           </div>
+
+          <ToggleButtonGroup
+            value={modelView}
+            exclusive
+            onChange={(_event, value: ModelView | null) => {
+              if (value) setModelView(value);
+            }}
+            size="small"
+            aria-label="Model view"
+            className="min-w-full sm:min-w-[300px]"
+          >
+            <ToggleButton value="all" aria-label="All models and groups">
+              All
+            </ToggleButton>
+            <ToggleButton value="groups" aria-label="Groups only">
+              <Boxes className="mr-2 h-4 w-4" />
+              Groups
+            </ToggleButton>
+            <ToggleButton value="ungrouped" aria-label="Ungrouped models only">
+              <FileBox className="mr-2 h-4 w-4" />
+              Ungrouped
+            </ToggleButton>
+          </ToggleButtonGroup>
         </div>
       </div>
 
@@ -792,7 +830,7 @@ const ModelList: React.FC<ModelListProps> = ({
           </div>
 
           {/* Print Groups */}
-          {visibleGroups.length > 0 && (
+          {modelView !== "ungrouped" && visibleGroups.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pb-5">
               {visibleGroups.map((group) => {
                 const allSelected = group.models.every((model) =>
@@ -885,8 +923,21 @@ const ModelList: React.FC<ModelListProps> = ({
             )}
 
             {/* Render Models */}
-            {ungroupedModels.map((model) => renderModelCard(model))}
+            {modelView !== "groups" &&
+              ungroupedModels.map((model) => renderModelCard(model))}
           </div>
+
+          {modelView === "groups" && visibleGroups.length === 0 && (
+            <div className="pb-24 text-center text-slate-500">
+              No print groups in this view
+            </div>
+          )}
+
+          {modelView === "ungrouped" && ungroupedModels.length === 0 && (
+            <div className="pb-24 text-center text-slate-500">
+              No ungrouped models in this view
+            </div>
+          )}
 
           <Dialog
             open={Boolean(groupToDissolve)}
