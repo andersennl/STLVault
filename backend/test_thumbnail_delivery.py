@@ -1,9 +1,12 @@
 import base64
+import io
 import os
 import sqlite3
 import tempfile
 import unittest
 
+from fastapi import UploadFile
+from pydantic import ValidationError
 from starlette.requests import Request
 
 
@@ -120,7 +123,9 @@ class ModelGroupTest(unittest.TestCase):
 
     def test_create_group_and_expose_membership_on_models(self):
         group = app.create_model_group(
-            {"name": "Desk organizer", "modelIds": ["part-1", "part-2"]}
+            app.ModelGroupCreate(
+                name="Desk organizer", modelIds=["part-1", "part-2"]
+            )
         )
 
         self.assertEqual(group["name"], "Desk organizer")
@@ -145,17 +150,81 @@ class ModelGroupTest(unittest.TestCase):
         self.assertIsNone(models["part-3"]["groupId"])
 
     def test_model_cannot_belong_to_two_groups(self):
-        app.create_model_group({"name": "First", "modelIds": ["part-1"]})
-        second = app.create_model_group({"name": "Second", "modelIds": []})
+        app.create_model_group(
+            app.ModelGroupCreate(name="First", modelIds=["part-1"])
+        )
+        second = app.create_model_group(
+            app.ModelGroupCreate(name="Second", modelIds=["part-2"])
+        )
 
         with self.assertRaises(app.HTTPException) as raised:
-            app.add_models_to_group(second["id"], {"modelIds": ["part-1"]})
+            app.add_models_to_group(
+                second["id"], app.ModelGroupMembers(modelIds=["part-1"])
+            )
 
         self.assertEqual(raised.exception.status_code, 409)
 
+    def test_group_requires_at_least_one_model(self):
+        with self.assertRaises(ValidationError):
+            app.ModelGroupCreate(name="Empty", modelIds=[])
+
+    def test_adding_existing_members_to_same_group_is_idempotent(self):
+        group = app.create_model_group(
+            app.ModelGroupCreate(name="Parts", modelIds=["part-1"])
+        )
+
+        updated = app.add_models_to_group(
+            group["id"],
+            app.ModelGroupMembers(modelIds=["part-1", "part-2"]),
+        )
+
+        self.assertEqual(updated["modelIds"], ["part-1", "part-2"])
+
+    def test_removing_last_member_dissolves_group(self):
+        group = app.create_model_group(
+            app.ModelGroupCreate(name="Temporary", modelIds=["part-1"])
+        )
+
+        result = app.remove_model_from_group(group["id"], "part-1")
+
+        self.assertEqual(result, {"ok": True, "groupDeleted": True})
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        group_count = conn.execute(
+            "SELECT COUNT(*) FROM model_groups WHERE id=?", (group["id"],)
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(group_count, 0)
+
+    def test_deleting_last_model_dissolves_group(self):
+        group = app.create_model_group(
+            app.ModelGroupCreate(name="Temporary", modelIds=["part-1"])
+        )
+
+        app.delete_model("part-1")
+
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        group_count = conn.execute(
+            "SELECT COUNT(*) FROM model_groups WHERE id=?", (group["id"],)
+        ).fetchone()[0]
+        conn.close()
+        self.assertEqual(group_count, 0)
+
+    def test_manual_update_response_keeps_group_fields(self):
+        group = app.create_model_group(
+            app.ModelGroupCreate(name="Parts", modelIds=["part-1"])
+        )
+        upload = UploadFile(filename="instructions.md", file=io.BytesIO(b"Print it"))
+
+        model = app.upload_model_manual("part-1", upload)
+
+        self.assertEqual(model["groupId"], group["id"])
+        self.assertEqual(model["groupName"], "Parts")
+
     def test_delete_group_keeps_models(self):
         group = app.create_model_group(
-            {"name": "Keep parts", "modelIds": ["part-1", "part-2"]}
+            app.ModelGroupCreate(
+                name="Keep parts", modelIds=["part-1", "part-2"]
+            )
         )
 
         app.delete_model_group(group["id"])
@@ -173,7 +242,9 @@ class ModelGroupTest(unittest.TestCase):
         self.assertEqual(membership_count, 0)
 
     def test_delete_model_removes_membership(self):
-        group = app.create_model_group({"name": "Parts", "modelIds": ["part-1"]})
+        group = app.create_model_group(
+            app.ModelGroupCreate(name="Parts", modelIds=["part-1"])
+        )
 
         app.delete_model("part-1")
 

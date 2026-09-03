@@ -22,6 +22,7 @@ import {
   SLICERS,
   SlicerType,
 } from "../services/api";
+import { buildVisibleGroups } from "../services/modelGroupView";
 
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -56,6 +57,7 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 interface ModelListProps {
   models: STLModel[];
+  allModels: STLModel[];
   modelGroups: ModelGroup[];
   folders: Folder[];
   currentFolderName: string;
@@ -106,6 +108,7 @@ const VisuallyHiddenInput = styled("input")({
 
 const ModelList: React.FC<ModelListProps> = ({
   models,
+  allModels,
   modelGroups,
   folders,
   currentFolderName,
@@ -216,13 +219,13 @@ const ModelList: React.FC<ModelListProps> = ({
 
   const visibleGroups = useMemo(
     () =>
-      modelGroups
-        .map((group) => ({
-          ...group,
-          models: processedModels.filter((model) => model.groupId === group.id),
-        }))
-        .filter((group) => group.models.length > 0),
-    [modelGroups, processedModels],
+      buildVisibleGroups(
+        modelGroups,
+        processedModels,
+        allModels,
+        modelView === "groups",
+      ),
+    [allModels, modelGroups, modelView, processedModels],
   );
 
   const ungroupedModels = useMemo(
@@ -237,7 +240,10 @@ const ModelList: React.FC<ModelListProps> = ({
     if (modelView === "ungrouped") {
       return ungroupedModels;
     }
-    return processedModels;
+    return [
+      ...visibleGroups.flatMap((group) => group.models),
+      ...ungroupedModels,
+    ];
   }, [modelView, processedModels, ungroupedModels, visibleGroups]);
 
   const allDisplayedSelected =
@@ -569,8 +575,8 @@ const ModelList: React.FC<ModelListProps> = ({
                 {processedFolders.length === 1 ? "folder • " : "folders • "}
                 {displayedModels.length}{" "}
                 {displayedModels.length === 1 ? "model" : "models"}
-                {models.length !== displayedModels.length &&
-                  ` ( filtered from: ${models.length} )`}
+                {allModels.length !== displayedModels.length &&
+                  ` ( filtered from: ${allModels.length} )`}
               </Typography>
             </Stack>
           </div>
@@ -833,9 +839,9 @@ const ModelList: React.FC<ModelListProps> = ({
           {modelView !== "ungrouped" && visibleGroups.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 pb-5">
               {visibleGroups.map((group) => {
-                const allSelected = group.models.every((model) =>
-                  selectedIds.has(model.id),
-                );
+                const allSelected =
+                  group.models.length > 0 &&
+                  group.models.every((model) => selectedIds.has(model.id));
                 return (
                   <Card key={group.id} variant="outlined">
                     <CardContent>
@@ -864,6 +870,7 @@ const ModelList: React.FC<ModelListProps> = ({
                         >
                           <Checkbox
                             checked={allSelected}
+                            disabled={group.models.length === 0}
                             onChange={() =>
                               onToggleGroupSelection(
                                 group.models.map((model) => model.id),

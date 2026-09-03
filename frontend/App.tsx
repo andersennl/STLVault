@@ -32,6 +32,13 @@ import Snackbar, { SnackbarCloseReason } from "@mui/material/Snackbar";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import Alert from "@mui/material/Alert";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
 
 const App = () => {
   const isDesktop = useMediaQuery("(min-width: 1024px)", true);
@@ -783,6 +790,7 @@ const App = () => {
               ) : (
                 <ModelList
                   models={filteredModels}
+                  allModels={models}
                   modelGroups={modelGroups}
                   folders={filteredFolders}
                   currentFolderName={currentFolderName}
@@ -1316,37 +1324,33 @@ const App = () => {
                 </div>
               )}
 
-              {showGroupModal && (
-                <div
-                  className={`fixed left-0 top-0 z-[60] bg-black/60 backdrop-blur-sm flex justify-center p-4 ${
-                    visualViewport.keyboardOpen ? "items-start" : "items-center"
-                  }`}
-                  style={{
-                    width: "100%",
-                    height:
-                      visualViewport.height ||
-                      (typeof window !== "undefined" ? window.innerHeight : 0),
-                    transform: `translate(${visualViewport.offsetLeft}px, ${visualViewport.offsetTop}px)`,
-                  }}
-                >
-                  <div className="bg-vault-800 border border-vault-600 rounded-xl p-6 w-96 shadow-2xl">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-bold text-white flex items-center gap-2">
-                        <Boxes className="w-4 h-4" /> Create Print Group
-                      </h3>
-                      <button
-                        onClick={() => setShowGroupModal(false)}
-                        className="text-slate-400 hover:text-white"
-                        aria-label="Close print group dialog"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <p className="text-sm text-slate-400 mb-4">
-                      Keep {selectedIds.size} selected models together without
-                      merging their files.
-                    </p>
-                    <form onSubmit={handleGroupSubmit}>
+              <Dialog
+                open={showGroupModal}
+                onClose={() => setShowGroupModal(false)}
+                aria-labelledby="print-group-dialog-title"
+                fullWidth
+                maxWidth="xs"
+              >
+                <DialogTitle id="print-group-dialog-title">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold flex items-center gap-2">
+                      <Boxes className="w-4 h-4" /> Create Print Group
+                    </span>
+                    <IconButton
+                      onClick={() => setShowGroupModal(false)}
+                      aria-label="Close print group dialog"
+                      size="small"
+                    >
+                      <X className="w-4 h-4" />
+                    </IconButton>
+                  </div>
+                </DialogTitle>
+                <DialogContent>
+                  <DialogContentText sx={{ mb: 2 }}>
+                    Keep {selectedIds.size} selected models together without
+                    merging their files.
+                  </DialogContentText>
+                  <form id="print-group-form" onSubmit={handleGroupSubmit}>
                       <div className="flex gap-2 mb-4">
                         <button
                           type="button"
@@ -1414,31 +1418,22 @@ const App = () => {
                           </select>
                         </div>
                       )}
-
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowGroupModal(false)}
-                          className="px-3 py-2 text-sm text-slate-300 hover:text-white"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={
-                            groupMode === "new"
-                              ? !groupName.trim()
-                              : !targetGroupId
-                          }
-                          className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
-                        >
-                          Save group
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
+                  </form>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setShowGroupModal(false)}>Cancel</Button>
+                  <Button
+                    type="submit"
+                    form="print-group-form"
+                    variant="contained"
+                    disabled={
+                      groupMode === "new" ? !groupName.trim() : !targetGroupId
+                    }
+                  >
+                    Save group
+                  </Button>
+                </DialogActions>
+              </Dialog>
 
               {showMoveModal && (
                 <div

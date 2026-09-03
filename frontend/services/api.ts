@@ -158,7 +158,7 @@ export const api = {
   removeModelFromGroup: async (
     groupId: string,
     modelId: string,
-  ): Promise<ModelGroup> => {
+  ): Promise<ModelGroup | { ok: true; groupDeleted: true }> => {
     const res = await fetch(
       `${API_BASE_URL}/model-groups/${groupId}/models/${modelId}`,
       { method: "DELETE" },
